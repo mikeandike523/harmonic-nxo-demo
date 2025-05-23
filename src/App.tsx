@@ -1,7 +1,8 @@
-import { Div, H1, Span } from "style-props-html";
+import { Button, Div, H1, Span } from "style-props-html";
 
 import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ToastContainer, toast } from "react-toastify";
 
 function PianoWidget({
   onNotePress,
@@ -79,7 +80,6 @@ function PianoWidget({
         return (
           <Span
             key={`note-index-${noteIndex}`}
-
             display="block"
             zIndex={1}
             position="absolute"
@@ -143,7 +143,6 @@ function PianoWidget({
             outline="1px solid black"
             onMouseDown={() => noteDown(noteIndex)}
           >
-
             <Span
               position="absolute"
               top="0"
@@ -163,15 +162,59 @@ function PianoWidget({
 }
 
 function App() {
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const synthNodeRef = useRef<AudioWorkletNode | null>(null);
+
+  const startAudio = useCallback(async () => {
+    const ctx = new AudioContext({
+      sampleRate: 48000, // Preferred
+      latencyHint: "interactive", // For lowest latency
+    });
+
+    await ctx.audioWorklet.addModule("nxo-processor.js"); // Worklet file we'll define later
+
+    const synthNode = new AudioWorkletNode(ctx, "nxo-processor", {
+      outputChannelCount: [2],
+    });
+
+    // Example connection (you may adapt this to your actual synth routing later)
+    synthNode.connect(ctx.destination);
+
+    synthNodeRef.current = synthNode;
+
+    setAudioContext(ctx);
+
+    synthNode.port.postMessage({
+      type: "start",
+    });
+
+    setIsPlaying(true);
+
+    toast("Audio started successfully!", {
+      type: "success",
+      autoClose: 3000,
+    });
+  }, []);
+
   const pianoDivRef = useRef<HTMLDivElement | null>(null);
   const bboxOrNull = useMonitorSize(pianoDivRef);
 
   function onNotePress(note: number) {
-    // TODO!
+    synthNodeRef.current?.port.postMessage({
+      type: "noteOn",
+      note: note + 21,
+      velocity: 127,
+    });
   }
 
   function onNoteRelease(note: number) {
-    // TODO!
+    synthNodeRef.current?.port.postMessage({
+      type: "noteOff",
+      note: note + 21,
+    });
   }
 
   return (
@@ -183,8 +226,40 @@ function App() {
       alignItems="center"
       justifyContent="center"
       padding="1rem"
+      gap="1rem"
     >
-      <H1 fontSize="2rem">Harmonic NXO Demo</H1>
+      <H1 fontSize="3rem">Harmonic NXO Demo</H1>
+
+      {!audioContext && (
+        <Button fontSize="1.5rem" padding="0.5rem" onClick={startAudio}>
+          Click to Start Audio
+        </Button>
+      )}
+
+      {audioContext && (
+        <Button
+          fontSize="1.5rem"
+          padding="0.5rem"
+          onClick={() => {
+            if (synthNodeRef.current) {
+              if (isPlaying) {
+                synthNodeRef.current.port.postMessage({ type: "stop" });
+                setIsPlaying(false);
+              } else {
+                synthNodeRef.current.port.postMessage({ type: "start" });
+                setIsPlaying(true);
+              }
+            } else {
+              toast("Audio not started yet!", {
+                type: "error",
+                autoClose: 3000,
+              });
+            }
+          }}
+        >
+          {isPlaying ? "Stop Audio" : "Start Audio"}
+        </Button>
+      )}
 
       {/* Piano Widget */}
 
@@ -202,6 +277,7 @@ function App() {
           />
         )}
       </Div>
+      <ToastContainer />
     </Div>
   );
 }
