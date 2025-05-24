@@ -1,73 +1,28 @@
 import { midiNoteToFrequency } from "./piano.js";
 
+import ufo from "./presets/ufo.js";
+import jazzOrgan from "./presets/jazz-organ.js";
+
+const presets={
+  jazzOrgan,
+  ufo,
+}
+
 // Raw peak amplitude (peak-peak = 2 * PER_NOTE_VOLUME). Will want to add this to the UI eventually. Here, we use
 // Here, we expect, on average, up to 8 notes to be playing simultaneously, but it is not a hard limit.
 // Note: According to browser standards, the hardware/underlying-audio-engine will do the clipping automatically. No need to clip on JS side.
-const PER_NOTE_VOLUME = 1 / 8;
+const PER_NOTE_VOLUME = 1 / 6;
 
 // Considered complete at 5 tau
 const COMPLETE_IN_N_TAU = 5;
 
 // For now, we'll hard-code some ADSR for different harmonics to test out some sounds
 
-function normalizeNXODef(def) {
-  let total = 0;
+const PRESET = "ufo";
 
-  for (const { amplitude } of Object.values(def)) {
-    total += amplitude;
-  }
+const exampleNXODef = presets[PRESET]
 
-  return Object.fromEntries(
-    Object.entries(def).map(
-      ([harmonic, { amplitude, sustainAmplitude, ...rest }]) => {
-        return [
-          harmonic,
-          {
-            ...rest,
-            amplitude: amplitude / total,
-            sustainAmplitude: sustainAmplitude / total,
-          },
-        ];
-      }
-    )
-  );
-}
 
-const exampleNXODef = normalizeNXODef({
-  // fundamental
-  1: {
-    amplitude: 1.0,
-    attack: 0.01, // attack time, seconds
-    decay: 1.5, // decay time, seconds
-    sustainAmplitude: 0.5, // sustain amplitude
-    sustain: 5, // sustain time, seconds
-    release: 0.2, // release time, seconds (naturally, release always approaches 0)
-  },
-  2: {
-    amplitude: 1.0,
-    attack: 0.01, // attack time, seconds
-    decay: 1.5, // decay time, seconds
-    sustainAmplitude: 0.5, // sustain amplitude
-    sustain: 5, // sustain time, seconds
-    release: 0.2, // release time, seconds (naturally, release always approaches 0)
-  },
-  3: {
-    amplitude: 1.0,
-    attack: 0.01, // attack time, seconds
-    decay: 1.5, // decay time, seconds
-    sustainAmplitude: 0.5, // sustain amplitude
-    sustain: 5, // sustain time, seconds
-    release: 0.2, // release time, seconds (naturally, release always approaches 0)
-  },
-  4: {
-    amplitude: 1.0,
-    attack: 0.01, // attack time, seconds
-    decay: 1.5, // decay time, seconds
-    sustainAmplitude: 0.5, // sustain amplitude
-    sustain: 5, // sustain time, seconds
-    release: 0.2, // release time, seconds (naturally, release always approaches 0)
-  },
-});
 
 // This will need to be greatly optimized ASAP
 function scaleAmplitudeADSR(harmonicDef, timeSinceNoteStart) {

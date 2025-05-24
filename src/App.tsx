@@ -1,17 +1,24 @@
 import { Button, Div, H1, Span } from "style-props-html";
 
-import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
+
+
+import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
+
+import {type Navigator as WebMidiNavigator, type WebMidiApi} from "./webmidi.esm"
+
 
 function PianoWidget({
   onNotePress,
   onNoteRelease,
   bbox,
+  midiActiveNoteIndices,
 }: {
   bbox: BBox;
   onNotePress: (note: number) => void;
   onNoteRelease: (note: number) => void;
+  midiActiveNoteIndices: Set<number>;
 }) {
   const { width, height } = bbox;
   const whiteKeyWidth = width / 52;
@@ -97,7 +104,7 @@ function PianoWidget({
               left="0"
               right="0"
               pointerEvents="none"
-              opacity={heldNotes.has(noteIndex) ? 1 : 0}
+              opacity={heldNotes.has(noteIndex) || midiActiveNoteIndices.has(noteIndex) ? 1 : 0}
               background="rgba(0,0,0,0.25)"
               zIndex={2}
             ></Span>
@@ -150,7 +157,7 @@ function PianoWidget({
               left="0"
               right="0"
               pointerEvents="none"
-              opacity={heldNotes.has(noteIndex) ? 1 : 0}
+              opacity={heldNotes.has(noteIndex)|| midiActiveNoteIndices.has(noteIndex)  ? 1 : 0}
               background="rgba(255,255,255,0.25)"
               zIndex={4}
             ></Span>
@@ -199,6 +206,30 @@ function App() {
     });
   }, []);
 
+
+  const midiActiveNoteIndicesCacheRef = useRef<Set<number>>(new Set());
+
+  // To propagate to piano widget
+  const [midiActiveNoteIndices, setMidiActiveNoteIndices] = useState<Set<number>>(new Set());
+
+  function midiActivateNoteIndexOn(noteIndex: number) {
+    midiActiveNoteIndicesCacheRef.current.add(noteIndex);
+  }
+
+  function midiDeactivateNoteIndexOn(noteIndex: number) {
+    midiActiveNoteIndicesCacheRef.current.delete(noteIndex);
+  }
+
+  function syncPianoWidgetVisuals(){
+    const next = new Set(midiActiveNoteIndicesCacheRef.current);
+    setMidiActiveNoteIndices(next);
+  }
+
+  useEffect(() => {
+    setInterval(syncPianoWidgetVisuals, 250);
+  }, []);
+
+
   const pianoDivRef = useRef<HTMLDivElement | null>(null);
   const bboxOrNull = useMonitorSize(pianoDivRef);
 
@@ -216,6 +247,52 @@ function App() {
       note: note + 21,
     });
   }
+
+    useEffect(() => {
+    // Bail early if the browser doesn't support it
+    if (!navigator.requestMIDIAccess) {
+      console.warn("Web MIDI API not supported in this browser.");
+      return;
+    }
+
+    (navigator as object as WebMidiNavigator)
+      .requestMIDIAccess({ sysex: false })
+      .then(onMIDISuccess)
+      .catch((err) => {
+        console.error("Failed to get MIDI access", err);
+      });
+
+    function onMIDISuccess(midiAccess: WebMidiApi.MIDIAccess) {
+      // Hook up all currently-connected inputs
+      for (let input of midiAccess.inputs.values()) {
+        input.onmidimessage = handleMIDIMessage;
+      }
+      // If devices connect/disconnect later, hook up the new ones too
+      midiAccess.onstatechange = (event) => {
+        const port = event.port;
+        if (port.type === "input" && port.state === "connected") {
+          (port as WebMidiApi.MIDIInput).onmidimessage = handleMIDIMessage;
+        }
+      };
+    }
+
+    function handleMIDIMessage(message: WebMidiApi.MIDIMessageEvent) {
+
+
+      const [status, noteNumber, velocity] = message.data;
+      const command = status & 0xf0;
+
+      // 0x90 = note on, 0x80 = note off
+      if (command === 0x90 && velocity > 0) {
+        // your pianoWidget uses 0–87; MIDI keys are 21–108
+        onNotePress(noteNumber - 21);
+        midiActivateNoteIndexOn(noteNumber - 21);
+      } else if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+        onNoteRelease(noteNumber - 21);
+        midiDeactivateNoteIndexOn(noteNumber - 21);
+      }
+    }
+  }, [onNotePress, onNoteRelease]);
 
   return (
     <Div
@@ -271,6 +348,7 @@ function App() {
       >
         {bboxOrNull && (
           <PianoWidget
+            midiActiveNoteIndices={midiActiveNoteIndices}
             bbox={bboxOrNull}
             onNotePress={onNotePress}
             onNoteRelease={onNoteRelease}
