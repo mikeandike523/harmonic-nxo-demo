@@ -1,11 +1,14 @@
 import { midiNoteToFrequency } from "./piano.js";
+import { buildADSRComputer } from "./nxo.js";
 
 import ufo from "./presets/ufo.js";
 import jazzOrgan from "./presets/jazz-organ.js";
+import piano from "./presets/piano.js";
 
 const presets={
   jazzOrgan,
   ufo,
+  piano
 }
 
 // Raw peak amplitude (peak-peak = 2 * PER_NOTE_VOLUME). Will want to add this to the UI eventually. Here, we use
@@ -13,48 +16,12 @@ const presets={
 // Note: According to browser standards, the hardware/underlying-audio-engine will do the clipping automatically. No need to clip on JS side.
 const PER_NOTE_VOLUME = 1 / 6;
 
-// Considered complete at 5 tau
-const COMPLETE_IN_N_TAU = 5;
-
-// For now, we'll hard-code some ADSR for different harmonics to test out some sounds
-
-const PRESET = "ufo";
+const PRESET = "piano";
 
 const exampleNXODef = presets[PRESET]
 
+const computer = buildADSRComputer(exampleNXODef, sampleRate, 5, 32, true);
 
-
-// This will need to be greatly optimized ASAP
-function scaleAmplitudeADSR(harmonicDef, timeSinceNoteStart) {
-  if (timeSinceNoteStart < harmonicDef.attack) {
-    const tau = harmonicDef.attack / COMPLETE_IN_N_TAU;
-    const param = timeSinceNoteStart / harmonicDef.attack;
-    const scale = 1 - Math.exp(-param / tau);
-    return scale * harmonicDef.amplitude;
-  }
-  if (timeSinceNoteStart < harmonicDef.attack + harmonicDef.decay) {
-    const param = (timeSinceNoteStart - harmonicDef.attack) / harmonicDef.decay;
-    const tau = harmonicDef.decay / COMPLETE_IN_N_TAU;
-    const scale = Math.exp(-param / tau);
-    return (
-      harmonicDef.sustainAmplitude +
-      scale * (harmonicDef.amplitude - harmonicDef.sustainAmplitude)
-    );
-  }
-  if (
-    timeSinceNoteStart <
-    harmonicDef.attack + harmonicDef.decay + harmonicDef.sustain
-  ) {
-    return harmonicDef.sustainAmplitude;
-  }
-  const param =
-    (timeSinceNoteStart -
-      (harmonicDef.attack + harmonicDef.decay + harmonicDef.sustain)) /
-    harmonicDef.release;
-  const tau = harmonicDef.release / COMPLETE_IN_N_TAU;
-  const scale = Math.exp(-param / tau);
-  return scale * harmonicDef.sustainAmplitude;
-}
 
 class NXOProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -104,18 +71,22 @@ class NXOProcessor extends AudioWorkletProcessor {
 
     let total = 0.0;
 
-    for (const [midiNote, { velocity, startedOn }] of this.notes.entries()) {
+    const noteEntries = this.notes.entries();
+
+    const harmonics = Object.keys(exampleNXODef);
+
+    for (const [midiNote, { velocity, startedOn }] of noteEntries) {
       const timeSinceNoteStart =
         (globalStartSamp + bufferOffSamp - startedOn) / sampleRate;
 
       const amplitude = (velocity / 127) * PER_NOTE_VOLUME;
 
-      for (const [harmonic, harmonicDef] of Object.entries(exampleNXODef)) {
+      for (const harmonic of harmonics) {
         const theta =
           2 * Math.PI * midiNoteToFrequency(midiNote) * harmonic * t;
         total +=
           amplitude *
-          scaleAmplitudeADSR(harmonicDef, timeSinceNoteStart) *
+          computer[harmonic](timeSinceNoteStart) *
           Math.sin(theta);
       }
     }

@@ -1,3 +1,19 @@
+import { formatHumanReadableByteCountBinary } from './human-readable.js';
+import { precomputeADSRTable, createADSRTableInterpolator } from './ADSR.js';
+
+/**
+ * @typedef {import('./ADSR').ADSRParameters} ADSRParameters
+ */
+
+/**
+ * @typedef {Record<number, ADSRParameters>} NXODef
+ */
+
+/**
+ * 
+ * @param {NXODef} def 
+ * @returns {NXODef}
+ */
 export function normalizeNXODef(def) {
   let total = 0;
 
@@ -19,4 +35,33 @@ export function normalizeNXODef(def) {
       }
     )
   );
+}
+
+/**
+ * 
+ * @param {NXODef} def 
+ * @param {number} sampleRate 
+ * @param {number} [numTau=undefined] 
+ * @param {number} [samplesPerTableEntry=undefined] 
+ * @param {boolean} [reportMemoryUsage=false] 
+ */
+export function buildADSRComputer(def, sampleRate, numTau, samplesPerTableEntry, reportMemoryUsage = false) {
+  const computer = {}
+ let report = ""
+  if(reportMemoryUsage) {
+    report += "ADSR Computer Memory Usage Report:"
+  }
+  for (const [harmonic, envelopeParameters] of Object.entries(def)) {
+    const table = precomputeADSRTable(envelopeParameters, sampleRate, numTau, samplesPerTableEntry);
+    if(reportMemoryUsage) {
+      report += " "*4+`
+  ${harmonic} -- ${formatHumanReadableByteCountBinary(table.buffer.byteLength)} of memory.
+  `.trim() + "\n"
+    }
+    computer[harmonic] = createADSRTableInterpolator(table, sampleRate, samplesPerTableEntry);
+  }
+  if(reportMemoryUsage) {
+    console.log(report)
+  }
+  return computer;
 }
