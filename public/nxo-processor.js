@@ -73,7 +73,7 @@ class NXOProcessor extends AudioWorkletProcessor {
 
     const noteEntries = this.notes.entries();
 
-    const harmonics = Object.keys(exampleNXODef);
+    const harmonics = Object.keys(exampleNXODef).map(k=>Number(k));
 
     for (const [midiNote, { velocity, startedOn }] of noteEntries) {
       const timeSinceNoteStart =
