@@ -171,7 +171,6 @@ function PianoWidget({
 function App() {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
 
   const synthNodeRef = useRef<AudioWorkletNode | null>(null);
 
@@ -198,7 +197,6 @@ function App() {
       type: "start",
     });
 
-    setIsPlaying(true);
 
     toast("Audio started successfully!", {
       type: "success",
@@ -226,7 +224,7 @@ function App() {
   }
 
   useEffect(() => {
-    setInterval(syncPianoWidgetVisuals, 250);
+    setInterval(syncPianoWidgetVisuals, 150);
   }, []);
 
 
@@ -313,34 +311,7 @@ function App() {
         </Button>
       )}
 
-      {audioContext && (
-        <Button
-          fontSize="1.5rem"
-          padding="0.5rem"
-          onClick={() => {
-            if (synthNodeRef.current) {
-              if (isPlaying) {
-                synthNodeRef.current.port.postMessage({ type: "stop" });
-                setIsPlaying(false);
-              } else {
-                synthNodeRef.current.port.postMessage({ type: "start" });
-                setIsPlaying(true);
-              }
-            } else {
-              toast("Audio not started yet!", {
-                type: "error",
-                autoClose: 3000,
-              });
-            }
-          }}
-        >
-          {isPlaying ? "Stop Audio" : "Start Audio"}
-        </Button>
-      )}
-
-      {/* Piano Widget */}
-
-      <Div
+      {audioContext && <Div
         width="min(100%, 88rem)"
         height="5rem"
         position="relative"
@@ -354,7 +325,8 @@ function App() {
             onNoteRelease={onNoteRelease}
           />
         )}
-      </Div>
+      </Div>}
+
       <ToastContainer />
     </Div>
   );
