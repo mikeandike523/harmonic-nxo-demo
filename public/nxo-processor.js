@@ -9,7 +9,6 @@ const PRESET = "jazzOrgan";
 const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
 const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
-const NOTE_GARBAGE_COLLECTION_INTERVAL = 0.2;
 
 const presets = {
   jazzOrgan,
@@ -19,9 +18,7 @@ const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32,);
 const harmonics = Array.from(Object.keys(exampleNXODef)).map(Number);
 const releaseNoteExpirationTime =
   computeReleasedNoteExpirationTime(exampleNXODef);
-const noteGarbageCollectionIntervalSamples = Math.floor(
-  NOTE_GARBAGE_COLLECTION_INTERVAL * sampleRate
-);
+
 
 function trueMod(n, m) {
   return ((n % m) + m) % m;
@@ -37,6 +34,7 @@ class NXOProcessor extends AudioWorkletProcessor {
       const { type, note, velocity = 127 } = event.data;
 
       if (type === "noteOn") {
+        this.runNoteGarbageCollection()
         this.notes.set(note, { velocity, samplesSinceNoteOn: 0, on: true });
       }
       if (type === "noteOff") {
@@ -64,7 +62,6 @@ class NXOProcessor extends AudioWorkletProcessor {
     // Kick of generation by setting to RECOMPUTE_AFTER
     this.samplesSinceLastCompute = RECOMPUTE_AFTER;
 
-    this.gcSamplesElapsed = 0;
   }
 
   runNoteGarbageCollection() {
@@ -82,9 +79,7 @@ class NXOProcessor extends AudioWorkletProcessor {
         }
       }
     }
-    // Comment out when not debugging
-    // console.log(`Num Active Notes: ${this.notes.size}`);
-    this.gcSamplesElapsed = 0;
+
   }
 
   generateMoreSamples() {
@@ -209,9 +204,6 @@ Note: this error should never occur. If it does, there is a major issue with you
     this.playhead = trueMod(this.playhead + outputLength, RING_BUFFER_SIZE);
     this.samplesSinceLastCompute += outputLength;
     this.gcSamplesElapsed += outputLength;
-    if (this.gcSamplesElapsed >= noteGarbageCollectionIntervalSamples) {
-      this.runNoteGarbageCollection()
-    }
 
     return true; // Keep alive
   }
