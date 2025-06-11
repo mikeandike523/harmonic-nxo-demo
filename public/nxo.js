@@ -1,5 +1,4 @@
-import { formatHumanReadableByteCountBinary } from "./human-readable.js";
-import { precomputeADSRTable, createADSRTableInterpolator } from "./ADSR.js";
+import { buildADSREngine, DEFAULT_NUM_TAU, DEFAULT_SAMPLES_PER_TABLE_ENTRY} from './ADSR.js';
 
 /**
  * @typedef {import('./ADSR').ADSRParameters} ADSRParameters
@@ -10,26 +9,31 @@ import { precomputeADSRTable, createADSRTableInterpolator } from "./ADSR.js";
  */
 
 /**
- *
+ * 
  * @param {NXODef} def
  * @returns {NXODef}
  */
 export function normalizeNXODef(def) {
-  let total = 0;
+  let totalAmplitude = 0;
+  let totalSustain = 0;
 
   for (const { amplitude } of Object.values(def)) {
-    total += amplitude;
+    totalAmplitude += amplitude;
+  }
+
+  for (const { sustain } of Object.values(def)) {
+    totalSustain += sustain;
   }
 
   return Object.fromEntries(
     Object.entries(def).map(
-      ([harmonic, { amplitude, sustainAmplitude, ...rest }]) => {
+      ([harmonic, { amplitude, sustain, ...rest }]) => {
         return [
           harmonic,
           {
             ...rest,
-            amplitude: amplitude / total,
-            sustainAmplitude: sustainAmplitude / total,
+            amplitude: amplitude / totalAmplitude,
+            sustain: sustain / totalSustain,
           },
         ];
       }
@@ -37,52 +41,43 @@ export function normalizeNXODef(def) {
   );
 }
 
-/**
- *
- * @param {NXODef} def
- * @param {number} sampleRate
- * @param {number} [numTau=undefined]
- * @param {number} [samplesPerTableEntry=undefined]
- * @param {boolean} [reportMemoryUsage=false]
- *
- * @returns {Map<number, (time: number) => number>}
- */
-export function buildADSRComputer(
-  def,
+export function buildNXOComputer(
+  nxoDef,
   sampleRate,
-  numTau,
-  samplesPerTableEntry,
-  reportMemoryUsage = false
+  numTau = DEFAULT_NUM_TAU,
+  samplesPerTableEntry = DEFAULT_SAMPLES_PER_TABLE_ENTRY
 ) {
-  const computer = new Map();
-  let report = "";
-  if (reportMemoryUsage) {
-    report += "ADSR Computer Memory Usage Report:";
-  }
-  for (const [harmonic, envelopeParameters] of Object.entries(def)) {
-    const table = precomputeADSRTable(
-      envelopeParameters,
+  /** @type {Map<number, { whileNoteOn: fn, whileNoteOff: fn }>} */
+  const processors = new Map();
+
+  for (const [harmonicKey, definition] of Object.entries(nxoDef)) {
+    const h = Number(harmonicKey);
+    const { ads, r } = buildADSREngine(
+      definition,
       sampleRate,
       numTau,
       samplesPerTableEntry
     );
-    if (reportMemoryUsage) {
-      report +=
-        " " * 4 +
-        `
-  ${harmonic} -- ${formatHumanReadableByteCountBinary(
-          table.buffer.byteLength
-        )} of memory.
-  `.trim() +
-        "\n";
-    }
-    computer.set(
-      Number(harmonic),
-      createADSRTableInterpolator(table, sampleRate, samplesPerTableEntry)
-    );
+
+    const sustainTime = definition.attack + definition.decay;
+
+    // capture in closure; no Map lookup on every sample
+    processors.set(h, {
+      whileNoteOn: timeSinceNoteOn =>
+        ads.interp(timeSinceNoteOn),
+      whileNoteOff: (totalTimeNoteWasOn, timeSinceNoteOff) => {
+        const startVal =
+          totalTimeNoteWasOn >= sustainTime
+            ? definition.sustain
+            : ads.interp(totalTimeNoteWasOn);
+        return startVal * r.interp(timeSinceNoteOff);
+      }
+    });
   }
-  if (reportMemoryUsage) {
-    console.log(report);
-  }
-  return computer;
+
+  return { processors };
+}
+
+export function computeReleasedNoteExpirationTime(nxoDef){
+  return Math.max(...Object.values(nxoDef).map(({ release }) => release));
 }
