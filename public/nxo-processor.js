@@ -51,6 +51,7 @@ class NXOProcessor extends AudioWorkletProcessor {
       const { type, note, velocity = 127 } = event.data;
 
       if (type === "noteOn") {
+        this.runNoteGarbageCollection()
         // immediately start tracking the new note
         this.notes.set(note, {
           velocity,
