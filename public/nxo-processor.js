@@ -14,11 +14,10 @@ const presets = {
   jazzOrgan,
 };
 const exampleNXODef = presets[PRESET];
-const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32,);
+const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32);
 const harmonics = Array.from(Object.keys(exampleNXODef)).map(Number);
 const releaseNoteExpirationTime =
   computeReleasedNoteExpirationTime(exampleNXODef);
-
 
 function trueMod(n, m) {
   return ((n % m) + m) % m;
@@ -27,184 +26,156 @@ function trueMod(n, m) {
 class NXOProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // Midi notes: A0 = 21
+
+    // Midi notes state
     this.notes = new Map();
+
+    // ring-buffer / playhead state
+    this.ringBufferLeft = new Float32Array(RING_BUFFER_SIZE).fill(0);
+    this.ringBufferRight = new Float32Array(RING_BUFFER_SIZE).fill(0);
+    this.playhead = 0;
+    this.generationHead = 0;
+    this.generationBuffer = new Float32Array(BUFFER_SIZE).fill(0);
+    this.samplesSinceLastCompute = RECOMPUTE_AFTER;
+
+    // —— GC debouncing state —— 
+    // wait 1.5× the longest release envelope before collecting
+    this.GC_DEBOUNCE_SAMPLES = Math.ceil(
+      releaseNoteExpirationTime * 1.5 * sampleRate
+    );
+    this.pendingGCDebounce = false;
+    // counts up only while a GC is pending
+    this.samplesSinceLastGCCounter = 0;
 
     this.port.onmessage = (event) => {
       const { type, note, velocity = 127 } = event.data;
 
       if (type === "noteOn") {
-        this.runNoteGarbageCollection()
-        this.notes.set(note, { velocity, samplesSinceNoteOn: 0, on: true });
+        // immediately start tracking the new note
+        this.notes.set(note, {
+          velocity,
+          samplesSinceNoteOn: 0,
+          on: true,
+        });
       }
+
       if (type === "noteOff") {
-        const existingNote = this.notes.get(note);
-        if (!existingNote) {
+        const nd = this.notes.get(note);
+        if (!nd) {
           throw new Error(`No note found for noteOff: ${note}`);
         }
-        existingNote.on = false;
-        existingNote.totalTimeNoteWasOn =
-          existingNote.samplesSinceNoteOn / sampleRate;
+        nd.on = false;
+        nd.totalTimeNoteWasOn = nd.samplesSinceNoteOn / sampleRate;
+
+        // debounce GC: reset counter and mark pending
+        this.pendingGCDebounce = true;
+        this.samplesSinceLastGCCounter = 0;
       }
     };
-
-    this.ringBufferLeft = new Float32Array(RING_BUFFER_SIZE).fill(0);
-    this.ringBufferRight = new Float32Array(RING_BUFFER_SIZE).fill(0);
-
-    this.playhead = 0;
-
-    this.generationHead = 0;
-
-    // Helps easily invert the loop order for the generation to increase its performance
-
-    this.generationBuffer = new Float32Array(BUFFER_SIZE).fill(0);
-
-    // Kick of generation by setting to RECOMPUTE_AFTER
-    this.samplesSinceLastCompute = RECOMPUTE_AFTER;
-
   }
 
   runNoteGarbageCollection() {
-    const currentNoteIds = Array.from(this.notes.keys());
-    for (const noteId of currentNoteIds) {
-      const noteData = this.notes.get(noteId);
-      if (noteData) {
-        if (!noteData.on) {
-          const timeSinceNoteOff =
-            noteData.samplesSinceNoteOn / sampleRate -
-            noteData.totalTimeNoteWasOn;
-          if (timeSinceNoteOff > releaseNoteExpirationTime) {
-            this.notes.delete(noteId);
-          }
+    for (const [noteId, noteData] of this.notes) {
+      if (!noteData.on) {
+        const timeSinceOff =
+          noteData.samplesSinceNoteOn / sampleRate -
+          noteData.totalTimeNoteWasOn;
+        if (timeSinceOff > releaseNoteExpirationTime) {
+          this.notes.delete(noteId);
         }
       }
     }
-
   }
 
   generateMoreSamples() {
-    // Clear the generation buffer
+    // Clear buffer
     this.generationBuffer.fill(0);
 
-    // Generate the samples and store in generation buffer
-    // This is easier than loading directly into ring buffer and dealing with index conversion headache
+    // Sum all active notes + harmonics
     for (const [midiNoteIndex, noteData] of this.notes.entries()) {
-      const baseFrequency = midiNoteToFrequency(midiNoteIndex);
+      const baseFreq = midiNoteToFrequency(midiNoteIndex);
       for (const harmonic of harmonics) {
-        const harmonicFrequency = baseFrequency * harmonic;
+        const freq = baseFreq * harmonic;
         const processor = computer.processors.get(harmonic);
         for (let i = 0; i < BUFFER_SIZE; i++) {
           const j = noteData.samplesSinceNoteOn + i;
-          const elapsedTime = j / sampleRate;
-          const sinValue = Math.sin(
-            2 * Math.PI * harmonicFrequency * elapsedTime
-          );
-          const envelopeValue = noteData.on
-            ? processor.whileNoteOn(elapsedTime)
+          const t = j / sampleRate;
+          const sin = Math.sin(2 * Math.PI * freq * t);
+          const env = noteData.on
+            ? processor.whileNoteOn(t)
             : processor.whileNoteOff(
                 noteData.totalTimeNoteWasOn,
-                elapsedTime - noteData.totalTimeNoteWasOn
+                t - noteData.totalTimeNoteWasOn
               );
 
           this.generationBuffer[i] +=
-            (sinValue * envelopeValue * PER_NOTE_VOLUME * noteData.velocity) /
-            127;
+            (sin * env * PER_NOTE_VOLUME * noteData.velocity) / 127;
         }
       }
     }
 
-    // Load the generation buffer into the ring buffer
-
-    // Generally speaking, this should be equal to this.playhead, but we play it safe
+    // Write into ring buffer (mono → stereo)
     for (let i = 0; i < BUFFER_SIZE; i++) {
-      const ringBufferIndex = trueMod(
-        this.generationHead + i,
-        RING_BUFFER_SIZE
-      );
-
-      // For now, mono (balanced) audio (i.e. L=R)
-      this.ringBufferLeft[ringBufferIndex] = this.generationBuffer[i];
-      this.ringBufferRight[ringBufferIndex] = this.generationBuffer[i];
+      const idx = trueMod(this.generationHead + i, RING_BUFFER_SIZE);
+      const v = this.generationBuffer[i];
+      this.ringBufferLeft[idx] = v;
+      this.ringBufferRight[idx] = v;
     }
-
-    // Here is where "overlapping computations" happens
-
-    // RECOMPUTE_AFTER is expected to be smaller than BUFFER_SIZE, so we are always producing more samples than will
-    // be played before the next computation. This is what we WANT to avoid pops
-    // If we just computed as much as needed per RECOMPUTE_AFTER, we would add delay between hardware buffers
-    // that will cause a pop or other audio artifacts
 
     this.generationHead = trueMod(
       this.generationHead + RECOMPUTE_AFTER,
       RING_BUFFER_SIZE
     );
-
-    // Note: This entire system relies heavily on the playhead always being within the generation buffer
-    // If computation takes long enough and the playhead escapes the buffer, then it will be noisy since the other regions
-    // of the ring buffer are NOT cleared (performance reasons)
-    // And also, even if they were cleared it would just remain as silence which is not desired either
-    // The computation of each buffer MUST fit within the time of RECOMPUTE_AFTER samples, and RECOMPUTE_AFTER
-    // must be smaller than BUFFER_SIZE, and BUFFER_SIZE must be smaller than RING_BUFFER_SIZE,
-    // and RECOMPUTE_AFTER should be at least twice the mean buffer length of the hardware buffers,
-    // which are unfortunately unpredictable in JavaScript Web Audio API.
   }
 
-  /**
-   *
-   * Get the true buffer index relative to the playhead.
-   *
-   * @param {number} k - Number of samples in the PAST. 0 = current sample, 1 = previous sample, etc.
-   */
   getHeadRelativeIndex(k) {
     return trueMod(this.playhead - k, RING_BUFFER_SIZE);
   }
 
-  process(inputs, outputs, parameters) {
+  process(inputs, outputs) {
     const output = outputs[0];
 
-    const numChannels = output.length;
-
-    if (numChannels !== 2) {
+    if (output.length !== 2) {
       throw new Error("Expected 2 output channels.");
     }
 
-    const outputChannelL = output[0];
-    const outputChannelR = output[1];
+    const outputL = output[0];
+    const outputR = output[1];
+    const outputLen = outputL.length;
 
-    if (outputChannelL.length !== outputChannelR.length) {
-      throw new Error(
-        `
-Output channel 0 and 1 must have the same length.
-Note: this error should never occur. If it does, there is a major issue with your computer.
-            `.trim()
-      );
-    }
-
+    // recompute if needed
     if (this.samplesSinceLastCompute >= RECOMPUTE_AFTER) {
       this.generateMoreSamples();
       this.samplesSinceLastCompute = 0;
     }
 
-    const outputLength = outputChannelL.length;
-    for (let i = 0; i < outputLength; ++i) {
-      outputChannelL[i] = 0;
-      outputChannelR[i] = 0;
+    // zero out and pull from ring buffer
+    for (let i = 0; i < outputLen; i++) {
+      const k = outputLen - 1 - i;
+      const idx = this.getHeadRelativeIndex(k);
+      outputL[i] = this.ringBufferLeft[idx];
+      outputR[i] = this.ringBufferRight[idx];
     }
-    for (let i = 0; i < outputLength; ++i) {
-      const k = outputLength - 1 - i;
-      const ringBufferIndex = this.getHeadRelativeIndex(k);
 
-      outputChannelL[i] = this.ringBufferLeft[ringBufferIndex];
-      outputChannelR[i] = this.ringBufferRight[ringBufferIndex];
-    }
+    // advance per-note sample counters
     for (const note of this.notes.values()) {
-      note.samplesSinceNoteOn += outputLength;
+      note.samplesSinceNoteOn += outputLen;
     }
 
-    this.playhead = trueMod(this.playhead + outputLength, RING_BUFFER_SIZE);
-    this.samplesSinceLastCompute += outputLength;
+    // advance playhead & compute counter
+    this.playhead = trueMod(this.playhead + outputLen, RING_BUFFER_SIZE);
+    this.samplesSinceLastCompute += outputLen;
 
-    return true; // Keep alive
+    // —— GC debounce check —— 
+    if (this.pendingGCDebounce) {
+      this.samplesSinceLastGCCounter += outputLen;
+      if (this.samplesSinceLastGCCounter >= this.GC_DEBOUNCE_SAMPLES) {
+        this.runNoteGarbageCollection();
+        this.pendingGCDebounce = false;
+      }
+    }
+
+    return true;
   }
 }
 
