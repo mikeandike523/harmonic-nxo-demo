@@ -203,7 +203,6 @@ Note: this error should never occur. If it does, there is a major issue with you
 
     this.playhead = trueMod(this.playhead + outputLength, RING_BUFFER_SIZE);
     this.samplesSinceLastCompute += outputLength;
-    this.gcSamplesElapsed += outputLength;
 
     return true; // Keep alive
   }
