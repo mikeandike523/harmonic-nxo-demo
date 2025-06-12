@@ -56,7 +56,6 @@ class NXOProcessor extends AudioWorkletProcessor {
       const { type, note, velocity = 127 } = event.data;
 
       if (type === "noteOn") {
-       // console.log("Note on:", note, velocity);
         this.runNoteGarbageCollection();
 
         // Enforce maximum polyphony (including releases)
@@ -115,7 +114,6 @@ class NXOProcessor extends AudioWorkletProcessor {
     // Clear buffer
     this.generationBuffer.fill(0);
 
-    //  console.log(Array.from(this.notes.keys()))
     // Sum all active notes + harmonics
     for (const [midiNoteIndex, noteData] of this.notes.entries()) {
       const baseFreq = midiNoteToFrequency(midiNoteIndex);
