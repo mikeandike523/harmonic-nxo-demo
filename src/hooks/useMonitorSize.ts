@@ -43,26 +43,23 @@ function getBBoxForElement<T extends MeasurableElement>(
  *
  * @param elementRef - Ref to the element to measure.
  * @param throttleMillis - Throttle interval in milliseconds (default: 100).
- * @param enableRenderRepeater -
- * Enable rendering the component repeatedly if the element's bounding box changes (default: false).
- * This is a non-traditional approach that can be useful in some cases but causes a sort of
- * animation-effect on extremely dynamic layouts (animated according to throttleMillis)
  * @param ignoreTransforms - Ignore the effects of CSS transforms on the element's position (default: false).
  * @returns The current bounding box of the element, or null if the element isn’t available.
  */
 export default function useMonitorSize<T extends MeasurableElement>(
   elementRef: RefObject<T | null>,
   throttleMillis: number = 100,
-  enableRenderRepeater: boolean = false,
   ignoreTransforms: boolean = false
 ): BBox | null {
   const [bbox, setBBox] = useState<BBox | null>(null);
+
 
   // Create a throttled measurement function that checks and updates the bounding box.
   const throttledMeasure = useMemo(
     () =>
       throttle(
         () => {
+
           const element = elementRef.current;
           if (element) {
             const newBBox = getBBoxForElement(element, ignoreTransforms);
@@ -79,9 +76,9 @@ export default function useMonitorSize<T extends MeasurableElement>(
           }
         },
         throttleMillis,
-        { leading: false, trailing: true }
+        { leading: true, trailing: true }
       ),
-    [elementRef, throttleMillis]
+    [throttleMillis, bbox]
   );
 
   useEffect(() => {
@@ -104,6 +101,8 @@ export default function useMonitorSize<T extends MeasurableElement>(
     // Run an initial measurement.
     throttledMeasure();
 
+
+
     return () => {
       if (observer) {
         observer.disconnect();
@@ -111,13 +110,14 @@ export default function useMonitorSize<T extends MeasurableElement>(
       window.removeEventListener("resize", throttledMeasure);
       throttledMeasure.cancel();
     };
-  }, [elementRef, throttledMeasure]);
+  }, [throttledMeasure]);
+
 
   useEffect(() => {
-    if (enableRenderRepeater) {
+    if(bbox === null) {
       throttledMeasure();
     }
-  });
+  })
 
   return bbox;
 }

@@ -3,7 +3,10 @@ import { buildNXOComputer, computeReleasedNoteExpirationTime } from "./nxo.js";
 
 import jazzOrgan from "./presets/jazz-organ.js";
 
-const PER_NOTE_VOLUME = 1 / 6;
+// Maximum number of simultaneous voices (including note releases)
+const MAX_VOICES = 10;
+// General expected number of simultaneous pressed-down notes
+const AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES = 6;
 const PRESET = "jazzOrgan";
 // Because the synthesizer is deterministic, we overlap computed regions to avoid computing in-between hardware buffers
 const RECOMPUTE_AFTER = 512;
@@ -18,6 +21,8 @@ const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32);
 const harmonics = Array.from(Object.keys(exampleNXODef)).map(Number);
 const releaseNoteExpirationTime =
   computeReleasedNoteExpirationTime(exampleNXODef);
+const per_note_volume = 1 / AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES;
+
 
 function trueMod(n, m) {
   return ((n % m) + m) % m;
@@ -51,7 +56,25 @@ class NXOProcessor extends AudioWorkletProcessor {
       const { type, note, velocity = 127 } = event.data;
 
       if (type === "noteOn") {
-        this.runNoteGarbageCollection()
+       // console.log("Note on:", note, velocity);
+        this.runNoteGarbageCollection();
+
+        // Enforce maximum polyphony (including releases)
+        if (this.notes.size >= MAX_VOICES) {
+          // find the note that has been running the longest
+          let oldestNoteId = null;
+          let maxSamples = -Infinity;
+          for (const [id, data] of this.notes.entries()) {
+            if (data.samplesSinceNoteOn > maxSamples) {
+              maxSamples = data.samplesSinceNoteOn;
+              oldestNoteId = id;
+            }
+          }
+          if (oldestNoteId !== null) {
+            this.notes.delete(oldestNoteId);
+          }
+        }
+
         // immediately start tracking the new note
         this.notes.set(note, {
           velocity,
@@ -92,6 +115,7 @@ class NXOProcessor extends AudioWorkletProcessor {
     // Clear buffer
     this.generationBuffer.fill(0);
 
+    //  console.log(Array.from(this.notes.keys()))
     // Sum all active notes + harmonics
     for (const [midiNoteIndex, noteData] of this.notes.entries()) {
       const baseFreq = midiNoteToFrequency(midiNoteIndex);
@@ -110,7 +134,7 @@ class NXOProcessor extends AudioWorkletProcessor {
               );
 
           this.generationBuffer[i] +=
-            (sin * env * PER_NOTE_VOLUME * noteData.velocity) / 127;
+            (sin * env * per_note_volume * noteData.velocity) / 127;
         }
       }
     }

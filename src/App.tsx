@@ -3,11 +3,12 @@ import { Button, Div, H1, Span } from "style-props-html";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 
-
 import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
 
-import {type Navigator as WebMidiNavigator, type WebMidiApi} from "./webmidi.esm"
-
+import {
+  type Navigator as WebMidiNavigator,
+  type WebMidiApi,
+} from "./webmidi.esm";
 
 function PianoWidget({
   onNotePress,
@@ -21,6 +22,7 @@ function PianoWidget({
   midiActiveNoteIndices: Set<number>;
 }) {
   const { width, height } = bbox;
+
   const whiteKeyWidth = width / 52;
   const blackKeyWidth = 0.6 * whiteKeyWidth;
   const blackKeyHeight = 0.8 * height;
@@ -104,7 +106,11 @@ function PianoWidget({
               left="0"
               right="0"
               pointerEvents="none"
-              opacity={heldNotes.has(noteIndex) || midiActiveNoteIndices.has(noteIndex) ? 1 : 0}
+              opacity={
+                heldNotes.has(noteIndex) || midiActiveNoteIndices.has(noteIndex)
+                  ? 1
+                  : 0
+              }
               background="rgba(0,0,0,0.25)"
               zIndex={2}
             ></Span>
@@ -157,7 +163,11 @@ function PianoWidget({
               left="0"
               right="0"
               pointerEvents="none"
-              opacity={heldNotes.has(noteIndex)|| midiActiveNoteIndices.has(noteIndex)  ? 1 : 0}
+              opacity={
+                heldNotes.has(noteIndex) || midiActiveNoteIndices.has(noteIndex)
+                  ? 1
+                  : 0
+              }
               background="rgba(255,255,255,0.25)"
               zIndex={4}
             ></Span>
@@ -170,7 +180,6 @@ function PianoWidget({
 
 function App() {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-
 
   const synthNodeRef = useRef<AudioWorkletNode | null>(null);
 
@@ -197,18 +206,18 @@ function App() {
       type: "start",
     });
 
-
     toast("Audio started successfully!", {
       type: "success",
       autoClose: 3000,
     });
   }, []);
 
-
   const midiActiveNoteIndicesCacheRef = useRef<Set<number>>(new Set());
 
   // To propagate to piano widget
-  const [midiActiveNoteIndices, setMidiActiveNoteIndices] = useState<Set<number>>(new Set());
+  const [midiActiveNoteIndices, setMidiActiveNoteIndices] = useState<
+    Set<number>
+  >(new Set());
 
   function midiActivateNoteIndexOn(noteIndex: number) {
     midiActiveNoteIndicesCacheRef.current.add(noteIndex);
@@ -218,35 +227,34 @@ function App() {
     midiActiveNoteIndicesCacheRef.current.delete(noteIndex);
   }
 
-  function syncPianoWidgetVisuals(){
+  function syncPianoWidgetVisuals() {
     const next = new Set(midiActiveNoteIndicesCacheRef.current);
     setMidiActiveNoteIndices(next);
   }
 
   useEffect(() => {
-    setInterval(syncPianoWidgetVisuals, 150);
+    setInterval(syncPianoWidgetVisuals, 100);
   }, []);
-
 
   const pianoDivRef = useRef<HTMLDivElement | null>(null);
   const bboxOrNull = useMonitorSize(pianoDivRef);
 
-  function onNotePress(note: number) {
+  const onNotePress = useCallback(function onNotePress(note: number) {
     synthNodeRef.current?.port.postMessage({
       type: "noteOn",
       note: note + 21,
       velocity: 127,
     });
-  }
+  }, []);
 
-  function onNoteRelease(note: number) {
+  const onNoteRelease = useCallback(function onNoteRelease(note: number) {
     synthNodeRef.current?.port.postMessage({
       type: "noteOff",
       note: note + 21,
     });
-  }
+  }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     // Bail early if the browser doesn't support it
     if (!navigator.requestMIDIAccess) {
       console.warn("Web MIDI API not supported in this browser.");
@@ -261,8 +269,10 @@ function App() {
       });
 
     function onMIDISuccess(midiAccess: WebMidiApi.MIDIAccess) {
+      console.log("MIDI access granted!");
       // Hook up all currently-connected inputs
       for (let input of midiAccess.inputs.values()) {
+        console.log("Input connected:", input.id);
         input.onmidimessage = handleMIDIMessage;
       }
       // If devices connect/disconnect later, hook up the new ones too
@@ -275,8 +285,6 @@ function App() {
     }
 
     function handleMIDIMessage(message: WebMidiApi.MIDIMessageEvent) {
-
-
       const [status, noteNumber, velocity] = message.data;
       const command = status & 0xf0;
 
@@ -311,21 +319,23 @@ function App() {
         </Button>
       )}
 
-      {audioContext && <Div
-        width="min(100%, 88rem)"
-        height="5rem"
-        position="relative"
-        ref={pianoDivRef}
-      >
-        {bboxOrNull && (
-          <PianoWidget
-            midiActiveNoteIndices={midiActiveNoteIndices}
-            bbox={bboxOrNull}
-            onNotePress={onNotePress}
-            onNoteRelease={onNoteRelease}
-          />
-        )}
-      </Div>}
+      {audioContext && (
+        <Div
+          width="min(100%, 88rem)"
+          height="5rem"
+          position="relative"
+          ref={pianoDivRef}
+        >
+          {bboxOrNull && (
+            <PianoWidget
+              midiActiveNoteIndices={midiActiveNoteIndices}
+              bbox={bboxOrNull}
+              onNotePress={onNotePress}
+              onNoteRelease={onNoteRelease}
+            />
+          )}
+        </Div>
+      )}
 
       <ToastContainer />
     </Div>
