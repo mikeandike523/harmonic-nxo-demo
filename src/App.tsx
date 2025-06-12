@@ -5,9 +5,9 @@ import { ToastContainer, toast } from "react-toastify";
 
 import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
 
-import {
-  type Navigator as WebMidiNavigator,
-  type WebMidiApi,
+import type {
+  Navigator as WebMidiNavigator,
+   WebMidiApi,
 } from "./webmidi.esm";
 
 function PianoWidget({
