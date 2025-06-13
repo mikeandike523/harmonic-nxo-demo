@@ -1,20 +1,26 @@
 import { midiNoteToFrequency } from "./piano.js";
 import { buildNXOComputer, computeReleasedNoteExpirationTime } from "./nxo.js";
+import { normalizeFIRFilter, designLowpassFIR } from "./DSP/FIR.js";
 
 import jazzOrgan from "./presets/jazz-organ.js";
+import idk from "./presets/idk.js";
 
 // Maximum number of simultaneous voices (including note releases)
 const MAX_VOICES = 10;
 // General expected number of simultaneous pressed-down notes
 const AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES = 6;
-const PRESET = "jazzOrgan";
+const PRESET = "idk";
 // Because the synthesizer is deterministic, we overlap computed regions to avoid computing in-between hardware buffers
 const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
 const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
+const ANTIPOP_TAPS = 32;
+const ANTIPOP_CUTOFF_HZ = 19.5e3;
+const ANTIPOP_KAISER_BETA=3.0
 
 const presets = {
   jazzOrgan,
+  idk
 };
 const exampleNXODef = presets[PRESET];
 const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32);
@@ -22,6 +28,13 @@ const harmonics = Array.from(Object.keys(exampleNXODef)).map(Number);
 const releaseNoteExpirationTime =
   computeReleasedNoteExpirationTime(exampleNXODef);
 const per_note_volume = 1 / AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES;
+const antiPopH = normalizeFIRFilter(designLowpassFIR(
+  sampleRate,
+  ANTIPOP_CUTOFF_HZ,
+  ANTIPOP_TAPS,
+  "kaiser",
+  ANTIPOP_KAISER_BETA
+));
 
 
 function trueMod(n, m) {
@@ -174,10 +187,16 @@ class NXOProcessor extends AudioWorkletProcessor {
 
     // zero out and pull from ring buffer
     for (let i = 0; i < outputLen; i++) {
-      const k = outputLen - 1 - i;
-      const idx = this.getHeadRelativeIndex(k);
-      outputL[i] = this.ringBufferLeft[idx];
-      outputR[i] = this.ringBufferRight[idx];
+      let totalLeft = 0;
+      let totalRight = 0;
+      for(let j=0; j<ANTIPOP_TAPS; j++) {
+        const idx = trueMod(this.playhead + i - j, RING_BUFFER_SIZE);
+        totalLeft += this.ringBufferLeft[idx] * antiPopH[j];
+        totalRight += this.ringBufferRight[idx] * antiPopH[j];
+      }
+      outputL[i] = totalLeft;
+      outputR[i] = totalRight;
+
     }
 
     // advance per-note sample counters

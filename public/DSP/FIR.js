@@ -9,7 +9,7 @@
  * @param {number} [kaiserBeta=5.0] - Beta parameter for Kaiser window (ignored for other windows)
  * @returns {Float32Array} Filter coefficients (normalized)
  */
-function designLowpassFIR(sampleRate, cutoffFreq, numTaps, window = 'blackman', kaiserBeta = 5.0) {
+export function designLowpassFIR(sampleRate, cutoffFreq, numTaps, window = 'blackman', kaiserBeta = 5.0) {
   const fc = cutoffFreq / sampleRate; // normalized freq (0 to 0.5)
   const M = numTaps - 1;
   const h = new Float32Array(numTaps);
@@ -72,4 +72,13 @@ function bessel0(x) {
     sum += term;
   }
   return sum;
+}
+
+export function normalizeFIRFilter(h) {
+  const hCopy = h.slice();
+  const  total = h.reduce((acc, val) => acc + val, 0);
+  for (let i = 0; i < h.length; i++) {
+    hCopy[i] /= total;
+  }
+  return hCopy;
 }
