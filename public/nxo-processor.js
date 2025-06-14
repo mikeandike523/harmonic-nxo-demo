@@ -3,13 +3,13 @@ import { buildNXOComputer, computeReleasedNoteExpirationTime } from "./nxo.js";
 import StereoAntiPopFilter from "./DSP/StereoAntiPopFilter.js";
 
 import jazzOrgan from "./presets/jazz-organ.js";
-import idk from "./presets/idk.js";
+import tiney from "./presets/tiney.js";
 
 // Maximum number of simultaneous voices (including note releases)
-const MAX_VOICES = 10;
+const MAX_VOICES = 16;
 // General expected number of simultaneous pressed-down notes
-const AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES = 6;
-const PRESET = "idk";
+const AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES = 12;
+const PRESET = "tiney";
 // Because the synthesizer is deterministic, we overlap computed regions to avoid computing in-between hardware buffers
 const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
@@ -18,7 +18,7 @@ const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
 
 const presets = {
   jazzOrgan,
-  idk
+  tiney
 };
 const exampleNXODef = presets[PRESET];
 const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32);
@@ -28,6 +28,14 @@ const releaseNoteExpirationTime =
 const per_note_volume = 1 / AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES;
 const antiPopFilter = new StereoAntiPopFilter(RING_BUFFER_SIZE);
 
+/**
+ * Soft clipping to keep signal in [-1, 1] range smoothly
+ * @param {number} x
+ * @returns {number}
+ */
+function softClip(x) {
+  return x / (1 + Math.abs(x));
+}
 
 function trueMod(n, m) {
   return ((n % m) + m) % m;
@@ -193,13 +201,14 @@ class NXOProcessor extends AudioWorkletProcessor {
       const idx = trueMod(this.playhead + i, RING_BUFFER_SIZE);
       const dryLeft = this.ringBufferLeft[idx];
       const dryRight = this.ringBufferRight[idx];
-      // const [wetLeft, wetRight] = antiPopFilter.process(dryLeft, dryRight);
 
-      // outputL[i] = wetLeft;
-      // outputR[i] = wetRight;
+      // outputL[i] = dryLeft
+      // outputR[i] = dryRight
 
-      outputL[i] = dryLeft
-      outputR[i] = dryRight
+
+      outputL[i] = softClip(dryLeft)
+      outputR[i] = softClip(dryRight)
+
 
     }
 
