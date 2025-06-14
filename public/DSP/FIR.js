@@ -82,3 +82,62 @@ export function normalizeFIRFilter(h) {
   }
   return hCopy;
 }
+
+/**
+ * Design a symmetric exponential-decay FIR filter.
+ * Produces a real-valued, linear-phase, lowpass-like shape centered around the middle tap.
+ * The time constant defines where the response drops to 1/e of its maximum.
+ *
+ * @param {number} numTaps - Number of filter taps (must be >= 1)
+ * @param {number} tau - Time constant in samples; 1/e point occurs tau samples from center
+ * @returns {Float32Array} Filter coefficients (normalized to unity gain)
+ */
+export function symmetricExDecay(numTaps, tau) {
+  if (numTaps < 1) throw new Error("numTaps must be at least 1");
+  if (tau <= 0) throw new Error("tau must be positive");
+
+  const h = new Float32Array(numTaps);
+  const M = numTaps - 1;
+  const center = M / 2;
+
+  for (let n = 0; n <= M; n++) {
+    const dist = Math.abs(n - center);
+    h[n] = Math.exp(-dist / tau);
+  }
+
+  // Normalize DC gain to 1
+  const sum = h.reduce((acc, val) => acc + val, 0);
+  for (let i = 0; i < numTaps; i++) {
+    h[i] /= sum;
+  }
+
+  return h;
+}
+
+/**
+ * Design a causal exponential-decay FIR filter.
+ * Starts at 1.0 and decays toward zero with time constant `tau` (samples).
+ * Good for transient softening or anti-pop smoothing, but introduces phase distortion.
+ *
+ * @param {number} numTaps - Number of taps (filter length)
+ * @param {number} tau - Time constant in samples
+ * @returns {Float32Array} Filter coefficients (normalized)
+ */
+export function asymmetricExDecay(numTaps, tau) {
+  if (numTaps < 1) throw new Error("numTaps must be at least 1");
+  if (tau <= 0) throw new Error("tau must be positive");
+
+  const h = new Float32Array(numTaps);
+
+  for (let n = 0; n < numTaps; n++) {
+    h[n] = Math.exp(-n / tau);
+  }
+
+  // Normalize DC gain to 1
+  const sum = h.reduce((acc, val) => acc + val, 0);
+  for (let i = 0; i < numTaps; i++) {
+    h[i] /= sum;
+  }
+
+  return h;
+}

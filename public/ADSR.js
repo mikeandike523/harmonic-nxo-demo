@@ -26,21 +26,30 @@ function evaluateTrueADS(
   timeSinceNoteOn,
   numTau = DEFAULT_NUM_TAU
 ) {
+
   if (timeSinceNoteOn < attack) {
     const tau = attack / numTau;
     const p = timeSinceNoteOn / attack;
     return amplitude * (1 - Math.exp(-p / tau));
   }
 
+
   // Decay phase
   const decayStart = attack;
   const decayEnd = attack + decay;
+
+
   if (timeSinceNoteOn < decayEnd) {
+
     const t = timeSinceNoteOn - decayStart;
-    const tau = decay / numTau;
+    // Suppose numTau is 5
+    // So 5 time constants must fit within decay
+    const tC = decay / numTau;
     const p = t / decay;
-    return sustain + Math.exp(-p / tau) * (amplitude - sustain);
+    
+    return sustain + Math.exp(-p / tC) * (amplitude - sustain);
   }
+
 
   // Sustain level
   return sustain;
@@ -58,8 +67,13 @@ function evaluateTrueR(
   if (timeSinceNoteOff >= release) {
     return 0;
   }
+  // Suppose numTau is 5
+  // That means 5 time constants must fit within release
+  const tC = release / numTau;
   const p = timeSinceNoteOff / release;
-  return Math.exp(-p / numTau);
+  
+  // Normalized due to how we handle sustain levels later
+  return Math.exp(-p / tC);
 }
 
 /**
@@ -187,19 +201,22 @@ export function buildADSEngine(
   numTau = DEFAULT_NUM_TAU,
   samplesPerTableEntry = DEFAULT_SAMPLES_PER_TABLE_ENTRY
 ) {
-  const table = precomputeADSTable(
-    envelopeParameters,
-    sampleRate,
-    numTau,
-    samplesPerTableEntry
-  );
-  const interp = createADSTableInterpolator(
-    table,
-    envelopeParameters,
-    sampleRate,
-    samplesPerTableEntry
-  );
-  return { table, interp };
+  // const table = precomputeADSTable(
+  //   envelopeParameters,
+  //   sampleRate,
+  //   numTau,
+  //   samplesPerTableEntry
+  // );
+  // const interp = createADSTableInterpolator(
+  //   table,
+  //   envelopeParameters,
+  //   sampleRate,
+  //   samplesPerTableEntry
+  // );
+  // return { table, interp };
+  return {
+    interp: (time) => evaluateTrueADS(envelopeParameters, time, numTau),
+  }
 }
 
 /**
@@ -212,19 +229,22 @@ export function buildREngine(
   numTau = DEFAULT_NUM_TAU,
   samplesPerTableEntry = DEFAULT_SAMPLES_PER_TABLE_ENTRY
 ) {
-  const table = precomputeRTable(
-    envelopeParameters,
-    sampleRate,
-    numTau,
-    samplesPerTableEntry
-  );
-  const interp = createRTableInterpolator(
-    table,
-    envelopeParameters,
-    sampleRate,
-    samplesPerTableEntry
-  );
-  return { table, interp };
+  // const table = precomputeRTable(
+  //   envelopeParameters,
+  //   sampleRate,
+  //   numTau,
+  //   samplesPerTableEntry
+  // );
+  // const interp = createRTableInterpolator(
+  //   table,
+  //   envelopeParameters,
+  //   sampleRate,
+  //   samplesPerTableEntry
+  // );
+  // return { table, interp };
+  return {
+    interp: (time) => evaluateTrueR(envelopeParameters, time, numTau),
+  }
 }
 
 /**

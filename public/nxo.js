@@ -15,14 +15,9 @@ import { buildADSREngine, DEFAULT_NUM_TAU, DEFAULT_SAMPLES_PER_TABLE_ENTRY} from
  */
 export function normalizeNXODef(def) {
   let totalAmplitude = 0;
-  let totalSustain = 0;
 
   for (const { amplitude } of Object.values(def)) {
     totalAmplitude += amplitude;
-  }
-
-  for (const { sustain } of Object.values(def)) {
-    totalSustain += sustain;
   }
 
   return Object.fromEntries(
@@ -33,7 +28,7 @@ export function normalizeNXODef(def) {
           {
             ...rest,
             amplitude: amplitude / totalAmplitude,
-            sustain: sustain / totalSustain,
+            sustain: sustain / totalAmplitude,
           },
         ];
       }

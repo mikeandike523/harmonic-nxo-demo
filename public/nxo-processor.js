@@ -1,6 +1,6 @@
 import { midiNoteToFrequency } from "./piano.js";
 import { buildNXOComputer, computeReleasedNoteExpirationTime } from "./nxo.js";
-import { normalizeFIRFilter, designLowpassFIR } from "./DSP/FIR.js";
+import StereoAntiPopFilter from "./DSP/StereoAntiPopFilter.js";
 
 import jazzOrgan from "./presets/jazz-organ.js";
 import idk from "./presets/idk.js";
@@ -14,9 +14,7 @@ const PRESET = "idk";
 const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
 const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
-const ANTIPOP_TAPS = 32;
-const ANTIPOP_CUTOFF_HZ = 19.5e3;
-const ANTIPOP_KAISER_BETA=3.0
+
 
 const presets = {
   jazzOrgan,
@@ -28,13 +26,7 @@ const harmonics = Array.from(Object.keys(exampleNXODef)).map(Number);
 const releaseNoteExpirationTime =
   computeReleasedNoteExpirationTime(exampleNXODef);
 const per_note_volume = 1 / AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES;
-const antiPopH = normalizeFIRFilter(designLowpassFIR(
-  sampleRate,
-  ANTIPOP_CUTOFF_HZ,
-  ANTIPOP_TAPS,
-  "kaiser",
-  ANTIPOP_KAISER_BETA
-));
+const antiPopFilter = new StereoAntiPopFilter(RING_BUFFER_SIZE);
 
 
 function trueMod(n, m) {
@@ -55,6 +47,9 @@ class NXOProcessor extends AudioWorkletProcessor {
     this.generationHead = 0;
     this.generationBuffer = new Float32Array(BUFFER_SIZE).fill(0);
     this.samplesSinceLastCompute = RECOMPUTE_AFTER;
+
+    this.lastLeftWet = 0;
+    this.lastRightWet = 0;
 
     // —— GC debouncing state —— 
     // wait 1.5× the longest release envelope before collecting
@@ -143,7 +138,9 @@ class NXOProcessor extends AudioWorkletProcessor {
                 noteData.totalTimeNoteWasOn,
                 t - noteData.totalTimeNoteWasOn
               );
-
+          if(!isFinite(env)){
+            console.log(noteData, harmonic,env.toString())
+          }
           this.generationBuffer[i] +=
             (sin * env * per_note_volume * noteData.velocity) / 127;
         }
@@ -154,6 +151,10 @@ class NXOProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < BUFFER_SIZE; i++) {
       const idx = trueMod(this.generationHead + i, RING_BUFFER_SIZE);
       const v = this.generationBuffer[i];
+      if(!isFinite(v)){
+        console.error(`Non-finite value at index ${i}: ${v}`);
+        console.log(Array.from(this.notes.values()).map(x=>JSON.stringify(x,null,2 )).join('\n\n'));
+      }
       this.ringBufferLeft[idx] = v;
       this.ringBufferRight[idx] = v;
     }
@@ -185,17 +186,20 @@ class NXOProcessor extends AudioWorkletProcessor {
       this.samplesSinceLastCompute = 0;
     }
 
+    
     // zero out and pull from ring buffer
     for (let i = 0; i < outputLen; i++) {
-      let totalLeft = 0;
-      let totalRight = 0;
-      for(let j=0; j<ANTIPOP_TAPS; j++) {
-        const idx = trueMod(this.playhead + i - j, RING_BUFFER_SIZE);
-        totalLeft += this.ringBufferLeft[idx] * antiPopH[j];
-        totalRight += this.ringBufferRight[idx] * antiPopH[j];
-      }
-      outputL[i] = totalLeft;
-      outputR[i] = totalRight;
+
+      const idx = trueMod(this.playhead + i, RING_BUFFER_SIZE);
+      const dryLeft = this.ringBufferLeft[idx];
+      const dryRight = this.ringBufferRight[idx];
+      // const [wetLeft, wetRight] = antiPopFilter.process(dryLeft, dryRight);
+
+      // outputL[i] = wetLeft;
+      // outputR[i] = wetRight;
+
+      outputL[i] = dryLeft
+      outputR[i] = dryRight
 
     }
 
