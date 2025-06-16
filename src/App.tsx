@@ -126,7 +126,7 @@ function App() {
 
   const [code, setCode] = useState<string>("\nreturn {};\n");
   const [presets, setPresets] = useState<Record<string, string>>({});
-  const [selectedPreset, setSelectedPreset] = useState<string>("");
+  const [selectedPreset, setSelectedPreset] = useState<string>("jazz-organ");
 
   const compileCode = useCallback(() => {
     if (!synthNodeRef.current) return;
@@ -257,7 +257,7 @@ function App() {
               {p}
             </option>
           ))}
-          <option value="">Custom</option>
+          <option value="">custom</option>
         </select>
         <Div flex="1">
           <Editor
