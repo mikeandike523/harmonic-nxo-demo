@@ -2,29 +2,25 @@ import { midiNoteToFrequency } from "./piano.js";
 import { buildNXOComputer, computeReleasedNoteExpirationTime } from "./nxo.js";
 import StereoAntiPopFilter from "./DSP/StereoAntiPopFilter.js";
 
-import jazzOrgan from "./presets/jazz-organ.js";
-import tiney from "./presets/tiney.js";
-
 // Maximum number of simultaneous voices (including note releases)
 const MAX_VOICES = 16;
 // General expected number of simultaneous pressed-down notes
 const AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES = 12;
-const PRESET = "tiney";
 // Because the synthesizer is deterministic, we overlap computed regions to avoid computing in-between hardware buffers
 const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
 const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
 
+let computer = null;
+let harmonics = [];
+let releaseNoteExpirationTime = 0;
 
-const presets = {
-  jazzOrgan,
-  tiney
-};
-const exampleNXODef = presets[PRESET];
-const computer = buildNXOComputer(exampleNXODef, sampleRate, 5, 32);
-const harmonics = Array.from(Object.keys(exampleNXODef)).map(Number);
-const releaseNoteExpirationTime =
-  computeReleasedNoteExpirationTime(exampleNXODef);
+function configureNXO(nxoDef) {
+  computer = buildNXOComputer(nxoDef, sampleRate, 5, 32);
+  harmonics = Array.from(Object.keys(nxoDef)).map(Number);
+  releaseNoteExpirationTime = computeReleasedNoteExpirationTime(nxoDef);
+}
+
 const per_note_volume = 1 / AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES;
 const antiPopFilter = new StereoAntiPopFilter(RING_BUFFER_SIZE);
 
@@ -61,15 +57,13 @@ class NXOProcessor extends AudioWorkletProcessor {
 
     // —— GC debouncing state —— 
     // wait 1.5× the longest release envelope before collecting
-    this.GC_DEBOUNCE_SAMPLES = Math.ceil(
-      releaseNoteExpirationTime * 1.5 * sampleRate
-    );
+    this.GC_DEBOUNCE_SAMPLES = 0;
     this.pendingGCDebounce = false;
     // counts up only while a GC is pending
     this.samplesSinceLastGCCounter = 0;
 
     this.port.onmessage = (event) => {
-      const { type, note, velocity = 127 } = event.data;
+      const { type, note, velocity = 127, code } = event.data;
 
       if (type === "noteOn") {
         this.runNoteGarbageCollection();
@@ -96,6 +90,24 @@ class NXOProcessor extends AudioWorkletProcessor {
           samplesSinceNoteOn: 0,
           on: true,
         });
+      }
+
+      if (type === "compile") {
+        try {
+          const fn = new Function(
+            "normalizeNXODef",
+            `'use strict'; return (async () => { ${code}\n })();`
+          );
+          Promise.resolve(fn(normalizeNXODef)).then((def) => {
+            configureNXO(def);
+            this.GC_DEBOUNCE_SAMPLES = Math.ceil(
+              releaseNoteExpirationTime * 1.5 * sampleRate
+            );
+          });
+        } catch (e) {
+          console.error("compile error", e);
+        }
+        return;
       }
 
       if (type === "noteOff") {
@@ -127,6 +139,10 @@ class NXOProcessor extends AudioWorkletProcessor {
   }
 
   generateMoreSamples() {
+    if (!computer) {
+      this.generationBuffer.fill(0);
+      return;
+    }
     // Clear buffer
     this.generationBuffer.fill(0);
 
@@ -192,6 +208,12 @@ class NXOProcessor extends AudioWorkletProcessor {
     if (this.samplesSinceLastCompute >= RECOMPUTE_AFTER) {
       this.generateMoreSamples();
       this.samplesSinceLastCompute = 0;
+    }
+
+    if (!computer) {
+      outputL.fill(0);
+      outputR.fill(0);
+      return true;
     }
 
     

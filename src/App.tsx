@@ -1,5 +1,6 @@
 import { Button, Div, H1, Span } from "style-props-html";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Editor from "@monaco-editor/react";
 import { throttle } from "lodash";
 import { ToastContainer, toast } from "react-toastify";
 import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
@@ -127,6 +128,26 @@ function App() {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const synthNodeRef = useRef<AudioWorkletNode | null>(null);
 
+  const [code, setCode] = useState<string>("\nreturn {};\n");
+  const [presets, setPresets] = useState<Record<string, string>>({});
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/presets.json")
+      .then((r) => r.json())
+      .then(setPresets)
+      .catch((e) => console.error("presets", e));
+  }, []);
+
+  useEffect(() => {
+    if (selectedPreset && presets[selectedPreset]) {
+      fetch(presets[selectedPreset])
+        .then((r) => r.text())
+        .then(setCode)
+        .catch((e) => console.error(e));
+    }
+  }, [selectedPreset, presets]);
+
   const startAudio = useCallback(async () => {
     const ctx = new AudioContext({
       sampleRate: 48000,
@@ -140,8 +161,14 @@ function App() {
     synthNodeRef.current = node;
     setAudioContext(ctx);
     node.port.postMessage({ type: "start" });
+    compileCode();
     toast("Audio started successfully!", { type: "success", autoClose: 3000 });
-  }, []);
+  }, [compileCode]);
+
+  const compileCode = useCallback(() => {
+    if (!synthNodeRef.current) return;
+    synthNodeRef.current.port.postMessage({ type: "compile", code });
+  }, [code]);
 
   const onNotePress = useCallback((note: number) => {
     synthNodeRef.current?.port.postMessage({
@@ -216,39 +243,69 @@ function App() {
   });
 
   return (
-    <Div
-      width="100%"
-      height="100%"
-      display="flex"
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="center"
-      padding="1rem"
-      gap="1rem"
-    >
-      <H1 fontSize="3rem">Harmonic NXO Demo</H1>
-      {!audioContext ? (
-        <Button fontSize="1.5rem" padding="0.5rem" onClick={startAudio}>
-          Click to Start Audio
-        </Button>
-      ) : (
-        <Div
-          width="min(100%,88rem)"
-          height="5rem"
-          position="relative"
-          ref={pianoRef}
+    <Div width="100%" height="100%" display="flex">
+      <Div
+        width="50%"
+        padding="1rem"
+        display="flex"
+        flexDirection="column"
+        gap="0.5rem"
+      >
+        <H1 fontSize="2rem">Preset Builder</H1>
+        <select
+          value={selectedPreset}
+          onChange={(e) => setSelectedPreset(e.target.value)}
         >
-          {bbox && (
-            <PianoWidget
-              midiActiveNoteIndices={midiActive}
-              bbox={bbox}
-              onNotePress={onNotePress}
-              onNoteRelease={onNoteRelease}
-            />
-          )}
+          <option value="">Custom</option>
+          {Object.keys(presets).map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <Div flex="1">
+          <Editor
+            height="100%"
+            language="javascript"
+            value={code}
+            onChange={(v) => setCode(v ?? "")}
+          />
         </Div>
-      )}
-      <ToastContainer />
+        <Button onClick={compileCode}>Compile</Button>
+      </Div>
+      <Div
+        width="50%"
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        padding="1rem"
+        gap="1rem"
+      >
+        <H1 fontSize="3rem">Harmonic NXO Demo</H1>
+        {!audioContext ? (
+          <Button fontSize="1.5rem" padding="0.5rem" onClick={startAudio}>
+            Click to Start Audio
+          </Button>
+        ) : (
+          <Div
+            width="min(100%,88rem)"
+            height="5rem"
+            position="relative"
+            ref={pianoRef}
+          >
+            {bbox && (
+              <PianoWidget
+                midiActiveNoteIndices={midiActive}
+                bbox={bbox}
+                onNotePress={onNotePress}
+                onNoteRelease={onNoteRelease}
+              />
+            )}
+          </Div>
+        )}
+        <ToastContainer />
+      </Div>
     </Div>
   );
 }

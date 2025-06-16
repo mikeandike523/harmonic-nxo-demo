@@ -16,7 +16,9 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-toastify": "^11.0.5",
-    "style-props-html": "^0.0.6"
+    "style-props-html": "^0.0.6",
+    "monaco-editor": "^0.45.0",
+    "monaco-react": "^4.4.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
