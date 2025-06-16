@@ -125,7 +125,8 @@ function App() {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const synthNodeRef = useRef<AudioWorkletNode | null>(null);
   const [recordStream, setRecordStream] = useState<MediaStream | null>(null);
-  const [memoryLimit, setMemoryLimit] = useState<number>(() => {
+
+  const memoryLimit = useMemo(() => {
     const dm = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
     if (typeof dm === "number" && Number.isFinite(dm)) {
       return (dm * 1024 ** 3) / 4;
@@ -135,7 +136,7 @@ function App() {
       return jsHeapLimit / 4;
     }
     return 256 * 1024 ** 2;
-  });
+  }, []);
 
   const [code, setCode] = useState<string>("\nreturn {};\n");
   const [presets, setPresets] = useState<Record<string, string>>({});
