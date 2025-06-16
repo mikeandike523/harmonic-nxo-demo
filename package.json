@@ -11,14 +11,15 @@
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
+    "@monaco-editor/react": "^4.7.0",
     "@types/lodash": "^4.17.17",
     "lodash": "^4.17.21",
+    "monaco-editor": "^0.45.0",
+    "monaco-react": "^1.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-toastify": "^11.0.5",
-    "style-props-html": "^0.0.6",
-    "monaco-editor": "^0.45.0",
-    "monaco-react": "^4.4.6"
+    "style-props-html": "^0.0.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

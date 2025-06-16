@@ -132,6 +132,11 @@ function App() {
   const [presets, setPresets] = useState<Record<string, string>>({});
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
+  const compileCode = useCallback(() => {
+    if (!synthNodeRef.current) return;
+    synthNodeRef.current.port.postMessage({ type: "compile", code });
+  }, [code]);
+
   useEffect(() => {
     fetch("/presets.json")
       .then((r) => r.json())
@@ -164,11 +169,6 @@ function App() {
     compileCode();
     toast("Audio started successfully!", { type: "success", autoClose: 3000 });
   }, [compileCode]);
-
-  const compileCode = useCallback(() => {
-    if (!synthNodeRef.current) return;
-    synthNodeRef.current.port.postMessage({ type: "compile", code });
-  }, [code]);
 
   const onNotePress = useCallback((note: number) => {
     synthNodeRef.current?.port.postMessage({

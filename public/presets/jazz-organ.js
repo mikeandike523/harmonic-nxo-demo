@@ -1,6 +1,4 @@
-import { normalizeNXODef } from "../nxo.js";
-
-export default normalizeNXODef({
+return {
   // 16' stop (sub-octave)
   0.5: {
     amplitude: 0.625,        // drawbar 5/8
@@ -73,4 +71,4 @@ export default normalizeNXODef({
     sustain: 1.0,
     release: 0.2,
   },
-});
+}

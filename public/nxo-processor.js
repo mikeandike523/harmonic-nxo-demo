@@ -1,6 +1,6 @@
 import { midiNoteToFrequency } from "./piano.js";
 import { buildNXOComputer, computeReleasedNoteExpirationTime } from "./nxo.js";
-import StereoAntiPopFilter from "./DSP/StereoAntiPopFilter.js";
+import { normalizeNXODef } from "./nxo.js";
 
 // Maximum number of simultaneous voices (including note releases)
 const MAX_VOICES = 16;
@@ -16,13 +16,14 @@ let harmonics = [];
 let releaseNoteExpirationTime = 0;
 
 function configureNXO(nxoDef) {
+  // for now, always normalize, can make this changeable later
+  nxoDef = normalizeNXODef(nxoDef);
   computer = buildNXOComputer(nxoDef, sampleRate, 5, 32);
   harmonics = Array.from(Object.keys(nxoDef)).map(Number);
   releaseNoteExpirationTime = computeReleasedNoteExpirationTime(nxoDef);
 }
 
 const per_note_volume = 1 / AVERAGE_EXPECTED_SIMULTANEOUS_PRESSED_NOTES;
-const antiPopFilter = new StereoAntiPopFilter(RING_BUFFER_SIZE);
 
 /**
  * Soft clipping to keep signal in [-1, 1] range smoothly
@@ -94,11 +95,20 @@ class NXOProcessor extends AudioWorkletProcessor {
 
       if (type === "compile") {
         try {
-          const fn = new Function(
-            "normalizeNXODef",
-            `'use strict'; return (async () => { ${code}\n })();`
-          );
-          Promise.resolve(fn(normalizeNXODef)).then((def) => {
+          // const fn = new Function(
+          //   "normalizeNXODef",
+          //   `'use strict'; return (async () => { ${code}\n })();`
+          // );
+          // Promise.resolve(fn(normalizeNXODef)).then((def) => {
+          //   configureNXO(def);
+          //   this.GC_DEBOUNCE_SAMPLES = Math.ceil(
+          //     releaseNoteExpirationTime * 1.5 * sampleRate
+          //   );
+          // });
+
+          const fn = new Function(`'use strict'; return (async () => { ${code}\n })();`)
+          Promise.resolve(fn()).then((def) => {
+            
             configureNXO(def);
             this.GC_DEBOUNCE_SAMPLES = Math.ceil(
               releaseNoteExpirationTime * 1.5 * sampleRate

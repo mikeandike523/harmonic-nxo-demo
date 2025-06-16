@@ -1,5 +1,3 @@
-import { normalizeNXODef } from "../nxo.js";
-
 const harms = {};
 for (let i = 1; i <= 3; i++) {
   harms[i] = {
@@ -19,5 +17,4 @@ for (let i = 1; i <= 3; i++) {
     release: 0.5 / i,
   };
 }
-
-export default normalizeNXODef(harms);
+return harms;
