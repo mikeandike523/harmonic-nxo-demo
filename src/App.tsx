@@ -17,7 +17,6 @@ function PianoWidget({
   onNoteRelease: (note: number) => void;
   midiActiveNoteIndices: Set<number>;
 }) {
-
   const { width, height } = bbox;
   const whiteKeyWidth = width / 52;
   const blackKeyWidth = 0.6 * whiteKeyWidth;
@@ -90,17 +89,15 @@ function PianoWidget({
             height={`${height}px`}
             outline="1px solid black"
             onMouseDown={() => noteDown(noteIndex)}
-            backgroundColor={active? "hsl(100,100%,50%)" : "white"}
+            backgroundColor={active ? "hsl(100,100%,50%)" : "white"}
             transition="background-color 0.100s ease-in-out"
-          >
-          
-          </Span>
+          ></Span>
         );
       })}
       {blackNoteIndices.map((noteIndex) => {
         const noteInOct = noteIndex % 12;
         const floorOct = Math.floor(noteIndex / 12);
-        const whiteOffset = whiteNotesInOctave.indexOf(noteInOct-1);
+        const whiteOffset = whiteNotesInOctave.indexOf(noteInOct - 1);
         const whitePos = floorOct * 7 + whiteOffset;
         const left = (whitePos + 1) * whiteKeyWidth - blackKeyWidth / 2;
         const active =
@@ -113,11 +110,10 @@ function PianoWidget({
             top="0"
             width={`${blackKeyWidth}px`}
             height={`${blackKeyHeight}px`}
-            backgroundColor={active ? "hsl(100,100%,40%)"  : "black"}
+            backgroundColor={active ? "hsl(100,100%,40%)" : "black"}
             onMouseDown={() => noteDown(noteIndex)}
             transition="backgroundColor 0.100s ease-in-out"
-          >
-          </Span>
+          ></Span>
         );
       })}
     </>
@@ -256,12 +252,12 @@ function App() {
           value={selectedPreset}
           onChange={(e) => setSelectedPreset(e.target.value)}
         >
-          <option value="">Custom</option>
           {Object.keys(presets).map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
           ))}
+          <option value="">Custom</option>
         </select>
         <Div flex="1">
           <Editor
@@ -271,7 +267,13 @@ function App() {
             onChange={(v) => setCode(v ?? "")}
           />
         </Div>
-        <Button onClick={compileCode}>Compile</Button>
+        <Button
+          onClick={compileCode}
+          disabled={!audioContext}
+          fontSize="1.5rem"
+        >
+          {audioContext ? "Compile" : "Start audio to enable compiling..."}
+        </Button>
       </Div>
       <Div
         width="50%"
