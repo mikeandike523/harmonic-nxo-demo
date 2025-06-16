@@ -5,6 +5,7 @@ import { throttle } from "lodash";
 import { ToastContainer, toast } from "react-toastify";
 import useMonitorSize, { type BBox } from "./hooks/useMonitorSize";
 import type { Navigator as WebMidiNavigator, WebMidiApi } from "./webmidi.esm";
+import Recorder from "./Recorder";
 
 function PianoWidget({
   onNotePress,
@@ -123,6 +124,18 @@ function PianoWidget({
 function App() {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const synthNodeRef = useRef<AudioWorkletNode | null>(null);
+  const [recordStream, setRecordStream] = useState<MediaStream | null>(null);
+  const [memoryLimit, setMemoryLimit] = useState<number>(() => {
+    const dm = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
+    if (typeof dm === "number" && Number.isFinite(dm)) {
+      return (dm * 1024 ** 3) / 4;
+    }
+    const jsHeapLimit = (performance as any).memory?.jsHeapSizeLimit;
+    if (typeof jsHeapLimit === "number" && Number.isFinite(jsHeapLimit)) {
+      return jsHeapLimit / 4;
+    }
+    return 256 * 1024 ** 2;
+  });
 
   const [code, setCode] = useState<string>("\nreturn {};\n");
   const [presets, setPresets] = useState<Record<string, string>>({});
@@ -158,8 +171,11 @@ function App() {
     const node = new AudioWorkletNode(ctx, "nxo-processor", {
       outputChannelCount: [2],
     });
+    const dest = new MediaStreamAudioDestinationNode(ctx);
     node.connect(ctx.destination);
+    node.connect(dest);
     synthNodeRef.current = node;
+    setRecordStream(dest.stream);
     setAudioContext(ctx);
     node.port.postMessage({ type: "start" });
     compileCode();
@@ -290,21 +306,24 @@ function App() {
             Click to Start Audio
           </Button>
         ) : (
-          <Div
-            width="min(100%,88rem)"
-            height="5rem"
-            position="relative"
-            ref={pianoRef}
-          >
-            {bbox && (
-              <PianoWidget
-                midiActiveNoteIndices={midiActive}
-                bbox={bbox}
-                onNotePress={onNotePress}
-                onNoteRelease={onNoteRelease}
-              />
-            )}
-          </Div>
+          <>
+            <Div
+              width="min(100%,88rem)"
+              height="5rem"
+              position="relative"
+              ref={pianoRef}
+            >
+              {bbox && (
+                <PianoWidget
+                  midiActiveNoteIndices={midiActive}
+                  bbox={bbox}
+                  onNotePress={onNotePress}
+                  onNoteRelease={onNoteRelease}
+                />
+              )}
+            </Div>
+            <Recorder stream={recordStream} memoryLimitBytes={memoryLimit} />
+          </>
         )}
         <ToastContainer />
       </Div>
