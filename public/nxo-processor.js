@@ -11,8 +11,8 @@ const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
 const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
 
-const UNIVERSAL_NOTE_FADE_IN = 0.008;
-const UNIVERSAL_NOTE_FADE_OUT = 0.008;
+// Enforces a type of fade in/out and ensures decay is sensible too
+const MINIMUM_ADR_PARAMETER_TIME = 0.015;
 
 let computer = null;
 let harmonics = [];
@@ -25,8 +25,9 @@ function configureNXO(nxoDef) {
       h,
       {
         ...params,
-        attack: Math.max(params.attack, UNIVERSAL_NOTE_FADE_IN),
-        release: Math.max(params.release, UNIVERSAL_NOTE_FADE_OUT),
+        attack: Math.max(params.attack, MINIMUM_ADR_PARAMETER_TIME),
+        release: Math.max(params.release, MINIMUM_ADR_PARAMETER_TIME),
+        decay: Math.max(params.decay, MINIMUM_ADR_PARAMETER_TIME),
       },
     ])
   );
