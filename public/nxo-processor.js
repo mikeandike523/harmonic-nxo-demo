@@ -11,11 +11,22 @@ const RECOMPUTE_AFTER = 512;
 const BUFFER_SIZE = 1024;
 const RING_BUFFER_SIZE = BUFFER_SIZE * 2;
 
+const UNIVERSAL_NOTE_FADE_IN = 0.008;
+const UNIVERSAL_NOTE_FADE_OUT = 0.008;
+
 let computer = null;
 let harmonics = [];
 let releaseNoteExpirationTime = 0;
 
 function configureNXO(nxoDef) {
+  // Ensure every harmonic releases for at least the universal fade duration
+  nxoDef = Object.fromEntries(
+    Object.entries(nxoDef).map(([h, params]) => [
+      h,
+      { ...params, release: Math.max(params.release, UNIVERSAL_NOTE_FADE_OUT) },
+    ])
+  );
+
   // for now, always normalize, can make this changeable later
   nxoDef = normalizeNXODef(nxoDef);
   computer = buildNXOComputer(nxoDef, sampleRate, 5, 32);
@@ -41,6 +52,8 @@ function trueMod(n, m) {
 class NXOProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
+
+    this.fadeInSamples = UNIVERSAL_NOTE_FADE_IN * sampleRate;
 
     // Midi notes state
     this.notes = new Map();
@@ -172,11 +185,15 @@ class NXOProcessor extends AudioWorkletProcessor {
                 noteData.totalTimeNoteWasOn,
                 t - noteData.totalTimeNoteWasOn
               );
-          if(!isFinite(env)){
+          let fade = 1;
+          if (j < this.fadeInSamples) {
+            fade *= j / this.fadeInSamples;
+          }
+                    if(!isFinite(env)){
             console.log(noteData, harmonic,env.toString())
           }
           this.generationBuffer[i] +=
-            (sin * env * per_note_volume * noteData.velocity) / 127;
+            (sin * env * per_note_volume * noteData.velocity * fade) / 127;
         }
       }
     }
